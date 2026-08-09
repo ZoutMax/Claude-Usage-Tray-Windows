@@ -6,3 +6,4 @@ __pycache__/
 *.png
 pkg/
 *.zip
+nuitka-build/
