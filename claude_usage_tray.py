@@ -37,7 +37,7 @@ from pathlib import Path
 
 APP_ID = "claude-usage-tray"
 APP_NAME = "Claude Usage Tray"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 PROJECT_URL = "https://github.com/ZoutMax/Claude-Usage-Tray-Windows"
 
 
@@ -270,9 +270,11 @@ def make_icon_image(pct, error=False, stale=False, size=64):
         text = f"{pct:.0f}"
         fraction = max(0.04, pct / 100.0)
 
-    pad = max(3, size // 12)
+    # Thin ring hugging the outer edge, so the big number in the middle stays
+    # legible at tiny tray sizes (16-24 px).
+    pad = max(2, size // 20)
     box = [pad, pad, size - pad, size - pad]
-    width = max(3, size // 10)
+    width = max(2, size // 16)
 
     # background track ring
     draw.arc(box, 0, 360, fill=(128, 128, 128, 90), width=width)
@@ -281,13 +283,13 @@ def make_icon_image(pct, error=False, stale=False, size=64):
     end = start + fraction * 360
     draw.arc(box, start, end, fill=color + (255,), width=width)
 
-    # centered percentage text
+    # centered percentage text, as large as will fit inside the ring
+    scale_by_len = {1: 0.78, 2: 0.66, 3: 0.50}.get(len(text), 0.50)
     try:
-        font_size = int(size * (0.34 if len(text) > 2 else 0.44))
-        font = ImageFont.truetype("arialbd.ttf", font_size)
+        font = ImageFont.truetype("arialbd.ttf", int(size * scale_by_len))
     except Exception:
         try:
-            font = ImageFont.truetype("arial.ttf", int(size * 0.4))
+            font = ImageFont.truetype("arial.ttf", int(size * scale_by_len))
         except Exception:
             font = ImageFont.load_default()
     tb = draw.textbbox((0, 0), text, font=font)
