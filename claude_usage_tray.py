@@ -37,7 +37,7 @@ from pathlib import Path
 
 APP_ID = "claude-usage-tray"
 APP_NAME = "Claude Usage Tray"
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 PROJECT_URL = "https://github.com/ZoutMax/Claude-Usage-Tray-Windows"
 
 
@@ -54,6 +54,7 @@ USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 POLL_SECONDS = 300  # normal poll interval
 FAIL_RETRY_SECONDS = 60  # first retry delay after a failure
 FAIL_RETRY_MAX = 900  # backoff cap
+AUTH_RETRY_SECONDS = 30  # re-check after a sign-in problem (no backoff)
 
 KIND_LABELS = {
     "session": "Session",
@@ -83,7 +84,10 @@ def auth_error(message):
     return err
 
 
-SIGN_IN_HINT = "Install Claude Code and run `claude` in a terminal to sign in"
+SIGN_IN_HINT = (
+    "install Claude Code, then run `claude` in a terminal once to sign in "
+    "(the tray fills in automatically)"
+)
 
 
 def read_access_token():
@@ -97,9 +101,10 @@ def read_access_token():
     token = oauth.get("accessToken")
     if not token:
         raise auth_error(f"No Claude access token found - {SIGN_IN_HINT}")
-    expires_at = oauth.get("expiresAt")
-    if isinstance(expires_at, (int, float)) and expires_at / 1000 < time.time() - 60:
-        raise auth_error("Claude sign-in expired - open Claude Code once to refresh it")
+    # NOTE: a locally-expired-looking token is not treated as fatal. Claude Code
+    # refreshes its own token in the background, the stored expiry can lag, and
+    # clock skew makes the local check unreliable — so we send it anyway and let
+    # the server decide (a real 401/403 surfaces as an auth error further down).
     return token, oauth.get("subscriptionType")
 
 
@@ -119,7 +124,10 @@ def fetch_usage():
             payload = json.load(response)
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
-            raise auth_error("Claude sign-in expired - open Claude Code once to refresh it")
+            raise auth_error(
+                "Claude sign-in expired - run `claude` once to refresh "
+                "(this updates automatically)"
+            )
         if exc.code == 429:
             err = UsageError("Rate limited - retrying automatically")
             try:
@@ -411,8 +419,15 @@ class TrayApp:
                 self.fail_delay = FAIL_RETRY_SECONDS
             except UsageError as exc:
                 self._apply(None, None, exc)
-                delay = max(getattr(exc, "retry_after", 0), self.fail_delay)
-                self.fail_delay = min(self.fail_delay * 2, FAIL_RETRY_MAX)
+                if getattr(exc, "kind", "") == "auth":
+                    # Sign-in problems are fixed outside this app (Claude Code
+                    # refreshes its own token). Keep checking on a short, fixed
+                    # interval so the tray recovers on its own within a minute
+                    # of the user signing in again — no backoff, no clicking.
+                    delay = AUTH_RETRY_SECONDS
+                else:
+                    delay = max(getattr(exc, "retry_after", 0), self.fail_delay)
+                    self.fail_delay = min(self.fail_delay * 2, FAIL_RETRY_MAX)
             except Exception as exc:  # never let a surprise kill the tray
                 self._apply(None, None, UsageError(f"{type(exc).__name__}: {exc}"))
                 delay = self.fail_delay
