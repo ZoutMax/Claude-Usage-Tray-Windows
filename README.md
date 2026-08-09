@@ -17,25 +17,20 @@ networking and parsing are the same stdlib logic; only the tray/UI layer differs
 
 ## Install (prebuilt exe)
 
-**Download the `.zip`** (`ClaudeUsageTray-*.zip`) from the
-[latest release](https://github.com/ZoutMax/Claude-Usage-Tray-Windows/releases),
-extract it, and double-click `ClaudeUsageTray.exe` — the ring appears in your
-system tray (Windows 11 tucks new icons into the `^` overflow; drag it onto the
-taskbar to keep it visible).
+Download `ClaudeUsageTray.exe` from the
+[latest release](https://github.com/ZoutMax/Claude-Usage-Tray-Windows/releases)
+and double-click it — the ring appears in your system tray (Windows 11 tucks new
+icons into the `^` overflow; drag it onto the taskbar to keep it visible).
 
-> **Grab the ZIP, not the bare .exe.** Chrome/Edge block a directly-downloaded
-> unsigned `.exe` as *"Virus detected"* — a **false positive** based on the file
-> having no reputation and no code signature, not an actual detection (Windows
-> Defender scans the file and finds nothing). Downloading the ZIP avoids that
-> block. If you already grabbed the exe and the browser flagged it, click the
-> download's **⋮ → Keep** to keep it.
-
-> **First run: Windows will still warn you.** The exe is not code-signed, so
-> Microsoft Defender SmartScreen shows a blue *"Windows protected your PC"* box.
-> Click **More info → Run anyway**. This is expected for any unsigned app — the
-> app is just the plain Python script in this repo, packaged with PyInstaller.
-> Prefer no warnings at all? Run [from source](#run-from-source) (needs Python)
-> or [build it yourself](#build-your-own-exe).
+> **The browser/Windows may warn you — it's a false positive.** The exe isn't
+> code-signed, so Chrome/Edge may flag the download as *"Virus detected"* and
+> Microsoft Defender SmartScreen shows *"Windows protected your PC"*. There is no
+> actual malware — Windows Defender scans the file and finds nothing; the flags
+> are purely because the file is unsigned and has no download reputation yet. To
+> proceed: in the browser click the download's **⋮ → Keep**, then on first run
+> click **More info → Run anyway**. If you'd rather have no warnings at all, run
+> [from source](#run-from-source) (needs Python) or
+> [build it yourself](#build-your-own-exe).
 
 To have it start automatically at login, run once in PowerShell:
 
