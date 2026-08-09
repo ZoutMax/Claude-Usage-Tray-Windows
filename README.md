@@ -22,15 +22,12 @@ Download `ClaudeUsageTray.exe` from the
 and double-click it — the ring appears in your system tray (Windows 11 tucks new
 icons into the `^` overflow; drag it onto the taskbar to keep it visible).
 
-> **The browser/Windows may warn you — it's a false positive.** The exe isn't
-> code-signed, so Chrome/Edge may flag the download as *"Virus detected"* and
-> Microsoft Defender SmartScreen shows *"Windows protected your PC"*. There is no
-> actual malware — Windows Defender scans the file and finds nothing; the flags
-> are purely because the file is unsigned and has no download reputation yet. To
-> proceed: in the browser click the download's **⋮ → Keep**, then on first run
-> click **More info → Run anyway**. If you'd rather have no warnings at all, run
-> [from source](#run-from-source) (needs Python) or
-> [build it yourself](#build-your-own-exe).
+> **First run: SmartScreen may warn you.** The exe isn't code-signed, so Microsoft
+> Defender SmartScreen may show *"Windows protected your PC"* — click **More info
+> → Run anyway**. There's no malware; the app is just the Python script in this
+> repo, compiled to a native exe with [Nuitka](https://nuitka.net). (Prefer no
+> prompt at all? Run [from source](#run-from-source) or
+> [build it yourself](#build-your-own-exe).)
 
 To have it start automatically at login, run once in PowerShell:
 
@@ -57,8 +54,11 @@ Requires Python 3.9+ (`pystray`, `pillow`).
 .\build.ps1
 ```
 
-Uses PyInstaller to produce a standalone `dist\ClaudeUsageTray.exe` — no Python
-needed on the machine that runs it.
+Uses [Nuitka](https://nuitka.net) to compile a standalone native
+`dist\ClaudeUsageTray.exe` — no Python needed on the machine that runs it. (The
+first build downloads a MinGW64 toolchain and takes a few minutes. Native
+compilation is deliberate: it avoids the antivirus "Virus detected" false-positive
+that PyInstaller one-file exes trigger.)
 
 ## Credentials — read this first
 
