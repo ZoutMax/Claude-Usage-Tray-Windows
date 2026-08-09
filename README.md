@@ -22,6 +22,14 @@ Download `ClaudeUsageTray.exe` from the
 and double-click it — the ring appears in your system tray (Windows 11 tucks new
 icons into the `^` overflow; drag it onto the taskbar to keep it visible).
 
+> **First run: Windows will warn you.** The exe is not code-signed, so Microsoft
+> Defender SmartScreen shows a blue *"Windows protected your PC"* box. Click
+> **More info → Run anyway**. This is expected for any unsigned app downloaded
+> from the internet — the app is the plain Python script in this repo, packaged
+> with PyInstaller. Some antivirus tools also flag PyInstaller `.exe` files by
+> heuristic; if yours quarantines it, allow it, or run [from source](#run-from-source)
+> instead (no warning, needs Python) or [build it yourself](#build-your-own-exe).
+
 To have it start automatically at login, run once in PowerShell:
 
 ```powershell
