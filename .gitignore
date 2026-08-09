@@ -7,3 +7,6 @@ __pycache__/
 pkg/
 *.zip
 nuitka-build/
+installer/embed.zip
+installer/payload/
+installer/dist-installer/

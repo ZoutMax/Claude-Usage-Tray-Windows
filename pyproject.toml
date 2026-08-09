@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-usage-tray"
+version = "1.0.2"
+description = "Windows system-tray app showing Claude Code plan usage limits."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "zoutmax" }]
+keywords = ["claude", "anthropic", "usage", "system-tray", "windows"]
+dependencies = ["pystray>=0.19", "pillow>=10.0"]
+
+[project.urls]
+Homepage = "https://github.com/ZoutMax/Claude-Usage-Tray-Windows"
+
+# GUI launcher: creates a windowless `claude-usage-tray` command (no console flash).
+[project.gui-scripts]
+claude-usage-tray = "claude_usage_tray:main"
+
+[tool.setuptools]
+py-modules = ["claude_usage_tray"]

@@ -37,7 +37,7 @@ from pathlib import Path
 
 APP_ID = "claude-usage-tray"
 APP_NAME = "Claude Usage Tray"
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 PROJECT_URL = "https://github.com/ZoutMax/Claude-Usage-Tray-Windows"
 
 
@@ -437,6 +437,42 @@ class TrayApp:
         self.icon.run()
 
 
+_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_RUN_NAME = "ClaudeUsageTray"
+
+
+def _startup_command():
+    """Command to launch the tray windowless, for the autostart Run entry."""
+    import shutil
+
+    exe = shutil.which("claude-usage-tray")
+    if exe:
+        return f'"{exe}"'
+    # Fallback: pythonw -m claude_usage_tray (no console window).
+    pyw = Path(sys.executable).with_name("pythonw.exe")
+    py = str(pyw) if pyw.exists() else sys.executable
+    return f'"{py}" -m claude_usage_tray'
+
+
+def enable_startup():
+    import winreg
+
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        winreg.SetValueEx(key, _RUN_NAME, 0, winreg.REG_SZ, _startup_command())
+    print("Claude Usage Tray will now start automatically at login.")
+
+
+def disable_startup():
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.DeleteValue(key, _RUN_NAME)
+        print("Removed Claude Usage Tray from login startup.")
+    except FileNotFoundError:
+        print("Autostart was not enabled.")
+
+
 def dump():
     buckets, plan = fetch_usage()
     if plan:
@@ -456,6 +492,10 @@ def main():
         pass
     if "--version" in sys.argv:
         print(f"{APP_ID} {VERSION}")
+    elif "--enable-startup" in sys.argv:
+        enable_startup()
+    elif "--disable-startup" in sys.argv:
+        disable_startup()
     elif "--dump" in sys.argv:
         try:
             dump()
