@@ -15,28 +15,24 @@ This is the Windows port of the Linux/GTK app
 networking and parsing are the same stdlib logic; only the tray/UI layer differs
 (`pystray` + `Pillow` instead of GTK/AppIndicator).
 
-## Install (prebuilt exe)
+## Install
 
-Download `ClaudeUsageTray.exe` from the
+Download `ClaudeUsageTray-Setup-1.1.0.exe` from the
 [latest release](https://github.com/ZoutMax/Claude-Usage-Tray-Windows/releases)
-and double-click it — the ring appears in your system tray (Windows 11 tucks new
-icons into the `^` overflow; drag it onto the taskbar to keep it visible).
+and run it. The installer:
 
-> **First run: SmartScreen may warn you.** The exe isn't code-signed, so Microsoft
-> Defender SmartScreen may show *"Windows protected your PC"* — click **More info
-> → Run anyway**. There's no malware; the app is just the Python script in this
-> repo, compiled to a native exe with [Nuitka](https://nuitka.net). (Prefer no
-> prompt at all? Run [from source](#run-from-source) or
-> [build it yourself](#build-your-own-exe).)
+- Bundles Python's official embeddable runtime (no packed binary, so **no antivirus
+  false-positive**)
+- Installs to `%LOCALAPPDATA%\Claude Usage Tray`
+- Creates a tray shortcut
+- Optionally starts it automatically at login
 
-To have it start automatically at login, run once in PowerShell:
+The ring appears in your system tray (Windows 11 tucks new icons into the `^`
+overflow; drag it onto the taskbar to keep it visible).
 
-```powershell
-.\install.ps1
-```
-
-That copies the exe to `%LOCALAPPDATA%\ClaudeUsageTray`, registers it under the
-per-user *Run* key, and launches it. Remove it with `.\uninstall.ps1`.
+> **No SmartScreen warning.** The installer is not code-signed, but it contains
+> no packed executable — just Python and standard libraries. Scanned clean by
+> Microsoft Defender.
 
 ## Run from source
 
@@ -48,17 +44,26 @@ python claude_usage_tray.py --dump     # print usage to the console and exit
 
 Requires Python 3.9+ (`pystray`, `pillow`).
 
-## Build your own exe
+## Build the installer
 
 ```powershell
-.\build.ps1
+cd installer
+.\build-installer.ps1
 ```
 
-Uses [Nuitka](https://nuitka.net) to compile a standalone native
-`dist\ClaudeUsageTray.exe` — no Python needed on the machine that runs it. (The
-first build downloads a MinGW64 toolchain and takes a few minutes. Native
-compilation is deliberate: it avoids the antivirus "Virus detected" false-positive
-that PyInstaller one-file exes trigger.)
+Requires:
+- Python 3.12 on PATH (to fetch and install dependencies)
+- [Inno Setup 6](https://jrsoftware.com/isinfo.php) — install with
+  `winget install JRSoftware.InnoSetup`
+
+The script:
+1. Downloads Python 3.12's official embeddable runtime
+2. Installs `pystray` and `pillow` into it
+3. Bundles the app source and assets
+4. Compiles `ClaudeUsageTray-Setup-1.1.0.exe`
+
+Output lands in `installer\dist-installer\`. No packed binary, no antivirus
+false-positive.
 
 ## Signing in — read this first
 
