@@ -60,17 +60,40 @@ first build downloads a MinGW64 toolchain and takes a few minutes. Native
 compilation is deliberate: it avoids the antivirus "Virus detected" false-positive
 that PyInstaller one-file exes trigger.)
 
-## Credentials — read this first
+## Signing in — read this first
 
-The app does **not** ask for a password or API key. It reuses the sign-in of
-[Claude Code](https://docs.anthropic.com/en/docs/claude-code) (the `claude`
-CLI), reading the OAuth token from `%USERPROFILE%\.claude\.credentials.json`
-(or `%CLAUDE_CONFIG_DIR%\.credentials.json` if you set that variable). The token
-is sent only to `api.anthropic.com`; nothing is written to disk.
+The app never asks for your password. There are two ways it gets a token, tried
+in this order:
 
-If you see **"Not signed in to Claude"**, install Claude Code and run `claude`
-in a terminal once to sign in. If you see **"sign-in expired"**, open Claude
-Code once to refresh the token.
+**1. Sign in from the tray (works on any machine).**
+Right-click the tray icon → **"Sign in to Claude…"**. If the `claude` CLI is
+installed it opens a console running `claude setup-token`; complete the browser
+step, copy the token it prints, and paste it into the box. The token is checked
+against the API before it is saved, so a mistyped one is rejected immediately
+rather than silently breaking the tray. It is stored in
+`%APPDATA%\ClaudeUsageTray\token.json`. **"Sign out"** removes it.
+
+**2. Borrow Claude Code's sign-in (automatic).**
+If you have not signed in through the tray, it reuses the OAuth token
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) already stores in
+`%USERPROFILE%\.claude\.credentials.json` (or `%CLAUDE_CONFIG_DIR%\.credentials.json`).
+This needs nothing from you — but it only exists on a machine where Claude Code
+itself is installed *and* signed in.
+
+Either way the token goes only to `api.anthropic.com`.
+
+### If the tray shows no numbers
+
+Run this — it says exactly which token source was found and whether the API
+accepted it:
+
+```
+claude-usage-tray --diagnose
+```
+
+It distinguishes the three cases that look identical from the tray: no token at
+all, a token the API rejects (expired — sign in again), and a network/proxy
+problem.
 
 ## How it works
 

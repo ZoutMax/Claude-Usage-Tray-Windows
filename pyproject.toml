@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-usage-tray"
-version = "1.0.3"
+version = "1.1.0"
 description = "Windows system-tray app showing Claude Code plan usage limits."
 readme = "README.md"
 requires-python = ">=3.9"

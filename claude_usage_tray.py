@@ -26,6 +26,8 @@ Usage:
 import json
 import math
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -37,7 +39,7 @@ from pathlib import Path
 
 APP_ID = "claude-usage-tray"
 APP_NAME = "Claude Usage Tray"
-VERSION = "1.0.3"
+VERSION = "1.1.0"
 PROJECT_URL = "https://github.com/ZoutMax/Claude-Usage-Tray-Windows"
 
 
@@ -50,6 +52,21 @@ def credentials_path():
 
 
 CREDENTIALS_FILE = credentials_path()
+
+
+def token_store_path():
+    """Where the tray keeps a token the user signed in with directly.
+
+    Claude Code's credentials are only present on a machine where Claude Code
+    itself is installed and signed in. On any other machine there is nothing to
+    read, which is exactly why the tray appeared to be "not communicating" -
+    it had no token at all. A token saved here makes the tray self-sufficient.
+    """
+    base = os.environ.get("APPDATA") or str(Path.home())
+    return Path(base) / "ClaudeUsageTray" / "token.json"
+
+
+TOKEN_FILE = token_store_path()
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 POLL_SECONDS = 300  # normal poll interval
 FAIL_RETRY_SECONDS = 60  # first retry delay after a failure
@@ -84,28 +101,125 @@ def auth_error(message):
     return err
 
 
-SIGN_IN_HINT = (
-    "install Claude Code, then run `claude` in a terminal once to sign in "
-    "(the tray fills in automatically)"
-)
+SIGN_IN_HINT = 'use "Sign in to Claude…" in this menu'
 
 
-def read_access_token():
+def read_saved_token():
+    """A token the user pasted into the tray, if any."""
+    try:
+        data = json.loads(TOKEN_FILE.read_text())
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return None
+    token = (data or {}).get("accessToken")
+    return (token, data.get("subscriptionType")) if token else None
+
+
+def save_token(token, plan=None):
+    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    TOKEN_FILE.write_text(json.dumps({"accessToken": token, "subscriptionType": plan}))
+    try:  # keep it readable only by this user
+        os.chmod(TOKEN_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def clear_token():
+    try:
+        TOKEN_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def read_claude_code_token():
+    """The OAuth token Claude Code stores, when Claude Code is installed here."""
     try:
         data = json.loads(CREDENTIALS_FILE.read_text())
     except FileNotFoundError:
-        raise auth_error(f"Not signed in to Claude - {SIGN_IN_HINT}")
+        return None
     except (OSError, json.JSONDecodeError) as exc:
         raise UsageError(f"Cannot read credentials: {exc}")
     oauth = data.get("claudeAiOauth") or data
     token = oauth.get("accessToken")
-    if not token:
-        raise auth_error(f"No Claude access token found - {SIGN_IN_HINT}")
-    # NOTE: a locally-expired-looking token is not treated as fatal. Claude Code
-    # refreshes its own token in the background, the stored expiry can lag, and
-    # clock skew makes the local check unreliable — so we send it anyway and let
-    # the server decide (a real 401/403 surfaces as an auth error further down).
-    return token, oauth.get("subscriptionType")
+    return (token, oauth.get("subscriptionType")) if token else None
+
+
+def read_access_token():
+    """Prefer a token signed in through the tray, else borrow Claude Code's.
+
+    A locally-expired-looking token is not treated as fatal: Claude Code
+    refreshes its own in the background, the stored expiry can lag, and clock
+    skew makes the local check unreliable. Send it and let the server decide -
+    a real 401/403 surfaces as an auth error further down.
+    """
+    saved = read_saved_token()
+    if saved:
+        return saved
+    borrowed = read_claude_code_token()
+    if borrowed:
+        return borrowed
+    raise auth_error(f"Not signed in to Claude - {SIGN_IN_HINT}")
+
+
+def claude_cli():
+    """Locate the Claude Code CLI, if it is installed."""
+    for candidate in ("claude.cmd", "claude.exe", "claude"):
+        found = shutil.which(candidate)
+        if found:
+            return found
+    local = Path.home() / ".local" / "bin" / "claude.exe"
+    return str(local) if local.exists() else None
+
+
+def ask_for_token():
+    """Prompt for a token.
+
+    The installer ships Python's *embeddable* runtime, which has no tkinter, so
+    a Tk dialog would crash for installed users. PowerShell's InputBox is
+    always present on Windows and needs nothing bundled.
+    """
+    script = (
+        "Add-Type -AssemblyName Microsoft.VisualBasic;"
+        "[Microsoft.VisualBasic.Interaction]::InputBox("
+        "'Paste your Claude token.\n\n"
+        "Get one by running:  claude setup-token',"
+        "'Claude Usage Tray - Sign in','')"
+    )
+    try:
+        done = subprocess.run(
+            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script],
+            capture_output=True, text=True, timeout=600,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return (done.stdout or "").strip() or None
+
+
+def run_setup_token():
+    """Open a console running `claude setup-token` so the user can mint one."""
+    cli = claude_cli()
+    if not cli:
+        return False
+    try:
+        subprocess.Popen(f'start "Claude sign-in" cmd /k "{cli}" setup-token', shell=True)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def validate_token(token):
+    """Confirm a token works before saving it, so a typo can't silently break the tray."""
+    request = urllib.request.Request(
+        USAGE_URL,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "anthropic-beta": "oauth-2025-04-20",
+            "Accept": "application/json",
+            "User-Agent": APP_ID,
+        },
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        payload = json.load(response)
+    return payload
 
 
 def fetch_usage():
@@ -353,6 +467,9 @@ class TrayApp:
             yield item(notice, None, enabled=False)
         yield Menu.SEPARATOR
         yield item("Refresh now", self._on_refresh)
+        yield item("Sign in to Claude…", self._on_sign_in)
+        if read_saved_token():
+            yield item("Sign out", self._on_sign_out)
         yield item(
             "Open claude.ai usage settings",
             lambda icon, it: webbrowser.open("https://claude.ai/settings/usage"),
@@ -364,6 +481,41 @@ class TrayApp:
             )
         yield Menu.SEPARATOR
         yield item("Quit", self._on_quit)
+
+    # -- sign-in ----------------------------------------------------------
+    def _on_sign_in(self, icon, item):
+        # Run off the menu thread: minting a token involves a browser round
+        # trip, and blocking here would freeze the tray.
+        threading.Thread(target=self._sign_in_flow, daemon=True).start()
+
+    def _sign_in_flow(self):
+        if claude_cli():
+            run_setup_token()          # opens a console; user completes it and copies the token
+        token = ask_for_token()
+        if not token:
+            return                     # cancelled
+        try:
+            payload = validate_token(token)
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                self._notify("That token was rejected - please try again")
+            else:
+                self._notify(f"Could not verify token (HTTP {exc.code})")
+            return
+        except Exception as exc:       # network, parse, anything else
+            self._notify(f"Could not verify token: {exc}")
+            return
+        plan = None
+        if isinstance(payload, dict):
+            plan = payload.get("subscription_type") or payload.get("subscriptionType")
+        save_token(token, plan)
+        self._notify("Signed in - reading your usage now")
+        self.wake.set()
+
+    def _on_sign_out(self, icon, item):
+        clear_token()
+        self._notify("Signed out of the tray's own token")
+        self.wake.set()
 
     def _on_refresh(self, icon, item):
         self.wake.set()
@@ -500,6 +652,51 @@ def dump():
         )
 
 
+def diagnose():
+    """Explain exactly where authentication stands.
+
+    "It doesn't work" is unactionable; this says which token source was found,
+    whether the API accepted it, and what to do next.
+    """
+    print(f"{APP_NAME} {VERSION}\n")
+    print("token sources")
+    saved = read_saved_token()
+    print(f"  tray sign-in    : {TOKEN_FILE}")
+    print(f"                    {'token saved' if saved else 'none'}")
+    print(f"  Claude Code     : {CREDENTIALS_FILE}")
+    if CREDENTIALS_FILE.exists():
+        try:
+            borrowed = read_claude_code_token()
+            print(f"                    {'token found' if borrowed else 'file present but no token'}")
+        except UsageError as exc:
+            print(f"                    unreadable: {exc}")
+    else:
+        print("                    not present (Claude Code not installed/signed in here)")
+    print(f"  claude CLI      : {claude_cli() or 'not found'}")
+
+    print("\nresult")
+    try:
+        token, plan = read_access_token()
+    except UsageError as exc:
+        print(f"  no usable token - {exc}")
+        print('\nnext step: run the tray and choose "Sign in to Claude…",')
+        print("or run `claude setup-token` and paste the token it prints.")
+        return
+    print(f"  using token from: {'tray sign-in' if saved else 'Claude Code'}")
+    print(f"  plan            : {plan or '(unknown)'}")
+    try:
+        validate_token(token)
+        print("  API check       : OK - the usage endpoint accepted this token")
+    except urllib.error.HTTPError as exc:
+        print(f"  API check       : REJECTED (HTTP {exc.code})")
+        if exc.code in (401, 403):
+            print('\nthe token is expired or invalid. Choose "Sign in to Claude…" in the tray,')
+            print("or run `claude setup-token` for a fresh one.")
+    except Exception as exc:
+        print(f"  API check       : could not reach the API - {exc}")
+        print("\nthis looks like a network/proxy problem rather than authentication.")
+
+
 def main():
     try:  # so block-bar glyphs survive a legacy (cp1252) console on --dump
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -507,6 +704,8 @@ def main():
         pass
     if "--version" in sys.argv:
         print(f"{APP_ID} {VERSION}")
+    elif "--diagnose" in sys.argv:
+        diagnose()
     elif "--enable-startup" in sys.argv:
         enable_startup()
     elif "--disable-startup" in sys.argv:

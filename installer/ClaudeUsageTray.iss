@@ -7,7 +7,7 @@
 ; The payload under .\payload is produced by build-installer.ps1.
 
 #define AppName "Claude Usage Tray"
-#define AppVersion "1.0.3"
+#define AppVersion "1.1.0"
 #define AppPublisher "zoutmax"
 #define AppURL "https://github.com/ZoutMax/Claude-Usage-Tray-Windows"
 #define AppExe "python\pythonw.exe"
