@@ -104,11 +104,21 @@ def auth_error(message):
 SIGN_IN_HINT = 'use "Sign in to Claude…" in this menu'
 
 
+def read_json_file(path):
+    """Read a JSON config written by anyone.
+
+    Always decode as UTF-8 and tolerate a BOM: read_text() would otherwise use
+    the locale codepage, and a file saved by PowerShell (Set-Content -Encoding
+    utf8 emits a BOM) then fails to parse and looks like "no token at all".
+    """
+    return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
 def read_saved_token():
     """A token the user pasted into the tray, if any."""
     try:
-        data = json.loads(TOKEN_FILE.read_text())
-    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        data = read_json_file(TOKEN_FILE)
+    except (FileNotFoundError, OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
     token = (data or {}).get("accessToken")
     return (token, data.get("subscriptionType")) if token else None
@@ -116,7 +126,9 @@ def read_saved_token():
 
 def save_token(token, plan=None):
     TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    TOKEN_FILE.write_text(json.dumps({"accessToken": token, "subscriptionType": plan}))
+    TOKEN_FILE.write_text(
+        json.dumps({"accessToken": token, "subscriptionType": plan}), encoding="utf-8"
+    )
     try:  # keep it readable only by this user
         os.chmod(TOKEN_FILE, 0o600)
     except OSError:
@@ -133,10 +145,10 @@ def clear_token():
 def read_claude_code_token():
     """The OAuth token Claude Code stores, when Claude Code is installed here."""
     try:
-        data = json.loads(CREDENTIALS_FILE.read_text())
+        data = read_json_file(CREDENTIALS_FILE)
     except FileNotFoundError:
         return None
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise UsageError(f"Cannot read credentials: {exc}")
     oauth = data.get("claudeAiOauth") or data
     token = oauth.get("accessToken")
