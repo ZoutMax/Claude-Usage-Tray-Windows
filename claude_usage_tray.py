@@ -39,7 +39,7 @@ from pathlib import Path
 
 APP_ID = "claude-usage-tray"
 APP_NAME = "Claude Usage Tray"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 PROJECT_URL = "https://github.com/ZoutMax/Claude-Usage-Tray-Windows"
 
 
@@ -67,8 +67,10 @@ def token_store_path():
 
 
 TOKEN_FILE = token_store_path()
+CONFIG_FILE = TOKEN_FILE.with_name("config.json")
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 POLL_SECONDS = 300  # normal poll interval
+DEFAULT_ALERTS = [80, 95]  # percentages worth interrupting someone for
 FAIL_RETRY_SECONDS = 60  # first retry delay after a failure
 FAIL_RETRY_MAX = 900  # backoff cap
 AUTH_RETRY_SECONDS = 30  # re-check after a sign-in problem (no backoff)
@@ -112,6 +114,27 @@ def read_json_file(path):
     utf8 emits a BOM) then fails to parse and looks like "no token at all".
     """
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def load_alert_levels():
+    """Percentages at which to warn, from config.json.
+
+    A tray that only shows numbers is a tray you have to remember to look at.
+    Anything malformed falls back to the defaults rather than stopping the app
+    from starting - a bad config should never cost you the usage display.
+    """
+    try:
+        data = read_json_file(CONFIG_FILE)
+    except (FileNotFoundError, OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return list(DEFAULT_ALERTS)
+    raw = (data or {}).get("alert_at", DEFAULT_ALERTS)
+    if raw in (None, False):
+        return []                       # explicitly opted out of alerts
+    try:
+        levels = sorted({int(v) for v in raw if 0 < int(v) <= 100})
+    except (TypeError, ValueError):
+        return list(DEFAULT_ALERTS)
+    return levels or []
 
 
 def read_saved_token():
@@ -450,6 +473,9 @@ class TrayApp:
         self.notified_auth = False
         self.wake = threading.Event()  # forces an immediate re-poll
         self.stopping = threading.Event()
+        self.alert_levels = load_alert_levels()
+        # {bucket label: (resets_at, {levels already announced})} - see _check_alerts
+        self.alerted = {}
 
         self.icon = pystray.Icon(
             APP_ID,
@@ -482,6 +508,8 @@ class TrayApp:
         yield item("Sign in to Claude…", self._on_sign_in)
         if read_saved_token():
             yield item("Sign out", self._on_sign_out)
+        levels = ", ".join(f"{lv}%" for lv in self.alert_levels) or "off"
+        yield item(f"Alerts: {levels}…", self._on_edit_alerts)
         yield item(
             "Open claude.ai usage settings",
             lambda icon, it: webbrowser.open("https://claude.ai/settings/usage"),
@@ -529,13 +557,67 @@ class TrayApp:
         self._notify("Signed out of the tray's own token")
         self.wake.set()
 
+    def _on_edit_alerts(self, icon, item):
+        """Open config.json, creating a commented default if it isn't there yet.
+
+        Writing the file first means the menu entry always opens something
+        editable, rather than Notepad's "cannot find the file" dialog.
+        """
+        try:
+            if not CONFIG_FILE.exists():
+                CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+                CONFIG_FILE.write_text(
+                    json.dumps({"alert_at": self.alert_levels or DEFAULT_ALERTS}, indent=2),
+                    encoding="utf-8",
+                )
+            subprocess.Popen(["notepad.exe", str(CONFIG_FILE)])
+            self._notify("Edit alert_at, then use Refresh now to apply")
+        except (OSError, subprocess.SubprocessError) as exc:
+            self._notify(f"Could not open settings: {exc}")
+
     def _on_refresh(self, icon, item):
+        # Re-read config here too, so editing alert_at takes effect without a
+        # restart - the menu entry above tells the user to do exactly this.
+        self.alert_levels = load_alert_levels()
         self.wake.set()
 
     def _on_quit(self, icon, item):
         self.stopping.set()
         self.wake.set()
         self.icon.stop()
+
+    # -- threshold alerts --------------------------------------------------
+    def _check_alerts(self, buckets):
+        """Warn once when a limit crosses a threshold.
+
+        Keyed on the bucket's reset time as well as its name: when a window
+        rolls over, the key changes and the bucket becomes eligible to warn
+        again. Without that it would either warn every poll (every 5 minutes,
+        which trains you to ignore it) or warn once and stay silent for good.
+        Only the highest newly-crossed level is announced, so passing 80 and 95
+        between two polls yields one message rather than two.
+        """
+        if not self.alert_levels:
+            return
+        for bucket in buckets:
+            label, pct = bucket["label"], bucket["pct"]
+            resets = str(bucket.get("resets_at"))
+            seen_resets, seen_levels = self.alerted.get(label, (None, set()))
+            if seen_resets != resets:                 # new window: start clean
+                seen_levels = set()
+            crossed = [lv for lv in self.alert_levels if pct >= lv and lv not in seen_levels]
+            if crossed:
+                highest = max(crossed)
+                seen_levels.update(crossed)
+                when = reset_text(bucket["resets_at"])
+                self._notify(
+                    f"{label} at {pct:.0f}%" + (f" - {when}" if when else "")
+                )
+            self.alerted[label] = (resets, seen_levels)
+        # drop buckets the API stopped returning, so this cannot grow forever
+        live = {b["label"] for b in buckets}
+        for gone in [k for k in self.alerted if k not in live]:
+            del self.alerted[gone]
 
     # -- state application ------------------------------------------------
     def _apply(self, buckets, plan, error):
@@ -562,6 +644,7 @@ class TrayApp:
             self.icon.icon = make_icon_image(worst)
             self.icon.title = f"Claude usage {worst:.0f}%"
             self.current = (buckets, plan, None)
+            self._check_alerts(buckets)
         try:
             self.icon.update_menu()
         except Exception:
@@ -685,6 +768,11 @@ def diagnose():
     else:
         print("                    not present (Claude Code not installed/signed in here)")
     print(f"  claude CLI      : {claude_cli() or 'not found'}")
+
+    levels = load_alert_levels()
+    print("\nalerts")
+    print(f"  config          : {CONFIG_FILE}")
+    print(f"  warn at         : {', '.join(f'{lv}%' for lv in levels) or 'disabled'}")
 
     print("\nresult")
     try:

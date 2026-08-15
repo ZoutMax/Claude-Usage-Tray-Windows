@@ -17,7 +17,7 @@ networking and parsing are the same stdlib logic; only the tray/UI layer differs
 
 ## Install
 
-Download `ClaudeUsageTray-Setup-1.1.0.exe` from the
+Download `ClaudeUsageTray-Setup-1.2.0.exe` from the
 [latest release](https://github.com/ZoutMax/Claude-Usage-Tray-Windows/releases)
 and run it. The installer:
 
@@ -60,7 +60,7 @@ The script:
 1. Downloads Python 3.12's official embeddable runtime
 2. Installs `pystray` and `pillow` into it
 3. Bundles the app source and assets
-4. Compiles `ClaudeUsageTray-Setup-1.1.0.exe`
+4. Compiles `ClaudeUsageTray-Setup-1.2.0.exe`
 
 Output lands in `installer\dist-installer\`. No packed binary, no antivirus
 false-positive.
@@ -99,6 +99,27 @@ claude-usage-tray --diagnose
 It distinguishes the three cases that look identical from the tray: no token at
 all, a token the API rejects (expired — sign in again), and a network/proxy
 problem.
+
+## Usage alerts
+
+By default the tray notifies you once when a limit crosses **80%** and again at
+**95%** — so you find out you are running low while you can still do something
+about it, instead of when a request fails.
+
+Each level fires **once per window**. When the session or weekly limit resets,
+the warnings arm themselves again. Crossing several levels between two polls
+produces one message, not a burst.
+
+Change the levels from the tray menu (**"Alerts: 80%, 95%…"**), which opens
+`%APPDATA%\ClaudeUsageTray\config.json`:
+
+```json
+{ "alert_at": [50, 75, 90] }
+```
+
+Then click **Refresh now** to apply — no restart needed. Set `"alert_at": []`
+(or `false`) to switch alerts off entirely. A malformed config falls back to the
+defaults rather than preventing the app from starting.
 
 ## How it works
 
