@@ -7,7 +7,7 @@
 ; The payload under .\payload is produced by build-installer.ps1.
 
 #define AppName "Claude Usage Tray"
-#define AppVersion "1.2.0"
+#define AppVersion "1.2.1"
 #define AppPublisher "zoutmax"
 #define AppURL "https://github.com/ZoutMax/Claude-Usage-Tray-Windows"
 #define AppExe "python\pythonw.exe"
@@ -55,3 +55,39 @@ Filename: "{app}\{#AppExe}"; Parameters: """{app}\{#AppScript}"""; WorkingDir: "
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
+; The saved token and alert settings. Leaving a credential on disk after an
+; uninstall is worse than making the user sign in again if they reinstall.
+Type: filesandordirs; Name: "{userappdata}\ClaudeUsageTray"
+
+[Code]
+// The tray runs FROM the install directory (python\pythonw.exe), so while it is
+// running Windows locks those files and they cannot be deleted. The uninstaller
+// still reports success, leaving ~27 MB of Python behind -- and an upgrade
+// installs over a locked runtime. So stop our own tray first, in both cases.
+//
+// Matched on the executable path under {app}, not on the image name: killing
+// every pythonw.exe would take down unrelated Python apps the user is running.
+procedure StopTray();
+var
+  ResultCode: Integer;
+  Cmd: String;
+begin
+  Cmd := '-NoProfile -WindowStyle Hidden -Command "' +
+         'Get-Process pythonw,python -ErrorAction SilentlyContinue | ' +
+         'Where-Object { $_.Path -like ''' + ExpandConstant('{app}') + '\*'' } | ' +
+         'Stop-Process -Force -ErrorAction SilentlyContinue"';
+  Exec('powershell.exe', Cmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(1200);   // let the handles actually close before files are touched
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopTray();    // upgrading over a running copy would fail to replace it
+  Result := '';
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  StopTray();
+  Result := True;
+end;

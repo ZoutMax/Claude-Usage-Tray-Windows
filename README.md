@@ -17,15 +17,19 @@ networking and parsing are the same stdlib logic; only the tray/UI layer differs
 
 ## Install
 
-Download `ClaudeUsageTray-Setup-1.2.0.exe` from the
+Download `ClaudeUsageTray-Setup-1.2.1.exe` from the
 [latest release](https://github.com/ZoutMax/Claude-Usage-Tray-Windows/releases)
 and run it. The installer:
 
 - Bundles Python's official embeddable runtime (no packed binary, so **no antivirus
   false-positive**)
-- Installs to `%LOCALAPPDATA%\Claude Usage Tray`
+- Installs per-user to `%LOCALAPPDATA%\Programs\Claude Usage Tray` — no admin rights
 - Creates a tray shortcut
 - Optionally starts it automatically at login
+
+Uninstalling removes everything, including the bundled Python and your saved
+token. **Python does not need to be installed on the machine** — the installer
+brings its own, inside its own folder, and takes it away again.
 
 The ring appears in your system tray (Windows 11 tucks new icons into the `^`
 overflow; drag it onto the taskbar to keep it visible).
@@ -60,7 +64,7 @@ The script:
 1. Downloads Python 3.12's official embeddable runtime
 2. Installs `pystray` and `pillow` into it
 3. Bundles the app source and assets
-4. Compiles `ClaudeUsageTray-Setup-1.2.0.exe`
+4. Compiles `ClaudeUsageTray-Setup-1.2.1.exe`
 
 Output lands in `installer\dist-installer\`. No packed binary, no antivirus
 false-positive.
@@ -71,12 +75,27 @@ The app never asks for your password. There are two ways it gets a token, tried
 in this order:
 
 **1. Sign in from the tray (works on any machine).**
-Right-click the tray icon → **"Sign in to Claude…"**. If the `claude` CLI is
-installed it opens a console running `claude setup-token`; complete the browser
-step, copy the token it prints, and paste it into the box. The token is checked
-against the API before it is saved, so a mistyped one is rejected immediately
-rather than silently breaking the tray. It is stored in
-`%APPDATA%\ClaudeUsageTray\token.json`. **"Sign out"** removes it.
+Right-click the tray icon → **"Sign in to Claude…"** and paste a token.
+
+**Claude Code does not need to be installed on this machine.** Mint the token
+once, on any machine that has an up-to-date Claude Code:
+
+```
+claude setup-token
+```
+
+Copy what it prints and paste it into the tray on whatever machine you want the
+icon on. If the local `claude` is new enough the tray opens that console for
+you; if it is missing or too old, it simply asks you to paste — no dead end.
+
+The token is checked against the API before it is saved, so a mistyped one is
+rejected immediately rather than silently breaking the tray. It is stored in
+`%APPDATA%\ClaudeUsageTray\token.json`. **"Sign out"** removes it, and
+uninstalling deletes it.
+
+> `setup-token` is a recent Claude Code command. On an older version it will
+> tell you to upgrade — do that on the machine you are minting from, not
+> necessarily the one running the tray.
 
 **2. Borrow Claude Code's sign-in (automatic).**
 If you have not signed in through the tray, it reuses the OAuth token

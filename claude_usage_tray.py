@@ -39,7 +39,7 @@ from pathlib import Path
 
 APP_ID = "claude-usage-tray"
 APP_NAME = "Claude Usage Tray"
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 PROJECT_URL = "https://github.com/ZoutMax/Claude-Usage-Tray-Windows"
 
 
@@ -205,18 +205,21 @@ def claude_cli():
     return str(local) if local.exists() else None
 
 
-def ask_for_token():
+def ask_for_token(prompt=None):
     """Prompt for a token.
 
     The installer ships Python's *embeddable* runtime, which has no tkinter, so
     a Tk dialog would crash for installed users. PowerShell's InputBox is
     always present on Windows and needs nothing bundled.
     """
+    prompt = prompt or "Paste your Claude token."
+    # InputBox takes a single-quoted PowerShell string; double any quote in the
+    # text so a stray apostrophe cannot break out of it.
+    safe = prompt.replace("'", "''").replace("\n", "`n")
     script = (
         "Add-Type -AssemblyName Microsoft.VisualBasic;"
         "[Microsoft.VisualBasic.Interaction]::InputBox("
-        "'Paste your Claude token.\n\n"
-        "Get one by running:  claude setup-token',"
+        f"'{safe}',"
         "'Claude Usage Tray - Sign in','')"
     )
     try:
@@ -227,6 +230,26 @@ def ask_for_token():
     except (OSError, subprocess.SubprocessError):
         return None
     return (done.stdout or "").strip() or None
+
+
+def cli_has_setup_token():
+    """Whether the installed Claude Code is new enough to mint a token.
+
+    `setup-token` was added in a later release. Launching it blindly on an older
+    CLI drops the user into a console telling them to upgrade, with no way
+    forward from the tray - so ask first and route around it.
+    """
+    cli = claude_cli()
+    if not cli:
+        return False
+    try:
+        done = subprocess.run(
+            [cli, "--help"], capture_output=True, text=True, timeout=30,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "setup-token" in ((done.stdout or "") + (done.stderr or ""))
 
 
 def run_setup_token():
@@ -529,9 +552,21 @@ class TrayApp:
         threading.Thread(target=self._sign_in_flow, daemon=True).start()
 
     def _sign_in_flow(self):
-        if claude_cli():
-            run_setup_token()          # opens a console; user completes it and copies the token
-        token = ask_for_token()
+        # Only launch the CLI when it can actually mint a token. An older Claude
+        # Code opens a console that just says "upgrade", which is a dead end.
+        if cli_has_setup_token():
+            run_setup_token()
+            prompt = ("A console is running 'claude setup-token'.\n"
+                      "Complete it, then paste the token it prints below.")
+        else:
+            prompt = (
+                "Paste your Claude token below.\n\n"
+                "To get one, run this on ANY machine with an up-to-date\n"
+                "Claude Code installed - it does not have to be this one:\n\n"
+                "    claude setup-token\n\n"
+                "Copy what it prints and paste it here."
+            )
+        token = ask_for_token(prompt)
         if not token:
             return                     # cancelled
         try:
